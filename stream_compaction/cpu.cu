@@ -19,7 +19,11 @@ namespace StreamCompaction {
          */
         void scan(int n, int *odata, const int *idata) {
             timer().startCpuTimer();
-            // TODO
+            odata[0] = idata[0];
+        	for (int i = 1; i < n; i++)
+        	{
+                odata[i] = odata[i - 1] + idata[i];
+        	}
             timer().endCpuTimer();
         }
 

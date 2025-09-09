@@ -1,6 +1,8 @@
 #include <cstdio>
 #include "cpu.h"
 
+#include <vector>
+
 #include "common.h"
 
 namespace StreamCompaction {
@@ -24,6 +26,11 @@ namespace StreamCompaction {
         	{
                 odata[i] = odata[i - 1] + idata[i];
         	}
+            for (int i = n - 1; i > 0; i--)
+            {
+                odata[i] = odata[i - 1];
+            }
+            odata[0] = 0;
             timer().endCpuTimer();
         }
 
@@ -54,9 +61,22 @@ namespace StreamCompaction {
          */
         int compactWithScan(int n, int *odata, const int *idata) {
             timer().startCpuTimer();
-            // TODO
+            int *isZero = new int[n];
+            int *scanArr = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                isZero[i] = (idata[i] != 0 ? 1 : 0);
+            }
+            scan(n, scanArr, isZero);
+            for (int i = 0; i < n; i++)
+            {
+	            if (isZero[i] == 1)
+	            {
+                    odata[scanArr[i]] = idata[i];
+	            }
+            }
             timer().endCpuTimer();
-            return -1;
+            return scanArr[n - 1] + isZero[n - 1];
         }
     }
 }

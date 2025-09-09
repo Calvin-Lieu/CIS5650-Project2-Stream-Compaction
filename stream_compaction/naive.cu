@@ -13,7 +13,7 @@ namespace StreamCompaction {
         }
         
         __global__ void scanStep(int n, int* odata, const int* idata, int offset) {
-            int idx = threadIdx.x + blockIdx.x * blockDim.x;
+            int idx = blockIdx.x * blockDim.x + threadIdx.x;
             if (idx >= n) return;
             if (idx >= offset)
             {

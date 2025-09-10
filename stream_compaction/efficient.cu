@@ -74,10 +74,10 @@ namespace StreamCompaction {
                 downSweep << <blocks, blockSize >> > (nPadded, dev_in, offset);
             }
 
+            timer().endGpuTimer();
+
             cudaMemcpy(odata, dev_in, n * sizeof(int), cudaMemcpyDeviceToHost);
             checkCUDAError("Cuda memcpy device to host");
-
-            timer().endGpuTimer();
         }
 
         /**
@@ -90,6 +90,7 @@ namespace StreamCompaction {
          * @returns      The number of elements remaining after compaction.
          */
         int compact(int n, int *odata, const int *idata) {
+            // Allocate global memory
             timer().startGpuTimer();
             // TODO
             timer().endGpuTimer();

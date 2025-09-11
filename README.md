@@ -18,7 +18,7 @@ The project is structured around progressively more efficient implementations of
 - **Naive GPU Scan**: Direct parallelization of scan using multiple kernel launches.  
 - **Work-Efficient GPU Scan**: Parallel tree-based algorithm with an up-sweep and down-sweep phase. Handles both power-of-two and non-power-of-two input sizes.
 - **Optimised Work-Efficient GPU Scan**: Makes significant performance improvements on work-efficient scan by reducing redundant work, improving memory access patterns and using block-level parallelism.
-- **GPU Stream Compaction**: Built on the work-efficient scan using map → scan → scatter steps.  
+- **GPU Stream Compaction**: Built on the work-efficient scan using map -> scan -> scatter steps.  
 - **Thrust Scan & Compaction**: Leverages NVIDIA’s optimized Thrust library for comparison against custom implementations.  
 
 ---

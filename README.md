@@ -103,6 +103,8 @@ The project is structured around progressively more efficient implementations of
 
 ### Thrust
 **Figure 6: Thrust NSight Time Consumption**
+
+
 ![](img/thrust-nsight.png)
 
 - Memory ops took up almost 97% of the time!

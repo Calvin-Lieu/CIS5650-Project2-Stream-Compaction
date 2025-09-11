@@ -15,24 +15,94 @@ namespace StreamCompaction {
         __global__ void upSweep(int n, int* data, int offset)
         {
             int idx = blockIdx.x * blockDim.x + threadIdx.x;
-            int numNodes = n / offset;
-            if (idx >= numNodes) return;
-
-            int right = (idx + 1) * offset - 1;
-            int left = right - (offset >> 1);
-
-            data[right] += data[left];
+            if (idx >= n) return;
+            if (idx % offset == 0)
+            {
+                data[idx + offset - 1] += data[idx + (offset >> 1) - 1];
+            }
         }
 
         __global__ void downSweep(int n, int* data, int offset)
         {
             int idx = blockIdx.x * blockDim.x + threadIdx.x;
-            int numNodes = n / offset;
-            if (idx >= numNodes) return;
+            if (idx >= n) return;
+            if (idx % offset == 0)
+            {
+                int temp = data[idx + (offset >> 1) - 1];
+                data[idx + (offset >> 1) - 1] = data[idx + offset - 1];
+                data[idx + offset - 1] += temp;
+            }
+        }
 
-            int right = (idx + 1) * offset - 1;
+        /**
+         * Performs prefix-sum (aka scan) on idata, storing the result into odata.
+         */
+        void scan(int n, int* odata, const int* idata) {
+            // Calculate necessary padding for non-powers of 2, if power of two then == 0
+            int nPadded = 1 << ilog2ceil(n);
+
+            // Declare and allocate padded buffer
+            int* dev_in;
+            cudaMalloc((void**)&dev_in, nPadded * sizeof(int));
+            checkCUDAError("Cuda Malloc");
+
+            cudaMemcpy(dev_in, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+            checkCUDAError("Cuda memcpy host to device");
+
+            // Set padded memory to zeroes
+            cudaMemset(dev_in + n, 0, (nPadded - n) * sizeof(int));
+
+            int blockSize = 128;
+            int blocks = (nPadded + blockSize - 1) / blockSize;
+
+            timer().startGpuTimer();
+            // Up-sweep phase
+            for (int i = 0; i < ilog2ceil(n); i++)
+            {
+                int offset = 1 << (i + 1);
+                upSweep << <blocks, blockSize >> > (nPadded, dev_in, offset);
+            }
+
+            // Set last element to zero
+            cudaMemset(dev_in + (nPadded - 1), 0, sizeof(int));
+            checkCUDAError("Cuda memset between up and down sweep");
+
+            // Down-sweep phase
+            for (int i = ilog2ceil(n) - 1; i >= 0; i--)
+            {
+                int offset = 1 << (i + 1);
+                downSweep << <blocks, blockSize >> > (nPadded, dev_in, offset);
+            }
+
+            cudaMemcpy(odata, dev_in, n * sizeof(int), cudaMemcpyDeviceToHost);
+            checkCUDAError("Cuda memcpy device to host");
+
+            timer().endGpuTimer();
+        }
+
+        __global__ void upSweepOpt(int n, int* data, int offset)
+        {
+            int idx = blockIdx.x * blockDim.x + threadIdx.x;
+            int numNodes = n / offset;
+        	if (idx >= numNodes) return;
+
+        	int right = (idx + 1) * offset - 1;
             int left = right - (offset >> 1);
 
+            if (left < 0) return;
+            data[right] += data[left];
+        }
+
+        __global__ void downSweepOpt(int n, int* data, int offset)
+        {
+            int idx = blockIdx.x * blockDim.x + threadIdx.x;
+            int numNodes = n / offset;
+        	if (idx >= numNodes) return;
+
+        	int right = (idx + 1) * offset - 1;
+            int left = right - (offset >> 1);
+
+            if (left < 0) return;
             int temp = data[left];
             data[left] = data[right];
             data[right] += temp;
@@ -42,7 +112,7 @@ namespace StreamCompaction {
         /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
-        void scan(int n, int *odata, const int *idata) {
+        void scanOpt(int n, int *odata, const int *idata) {
             // Calculate necessary padding for non-powers of 2, if power of two then == 0
             int nPadded = 1 << ilog2ceil(n);
 
@@ -58,7 +128,7 @@ namespace StreamCompaction {
             cudaMemset(dev_in + n, 0, (nPadded - n) * sizeof(int));
             checkCUDAError("Cuda memset dev_in padding");
 
-            int blockSize = 128;
+            int blockSize = 256;
 
             timer().startGpuTimer();
             // Up-sweep phase
@@ -67,7 +137,7 @@ namespace StreamCompaction {
                 int offset = 1 << (i + 1);
                 int numNodes = nPadded / offset;
                 int actualBlocks = (numNodes + blockSize - 1) / blockSize;
-                upSweep << <actualBlocks, blockSize >> > (nPadded, dev_in, offset);
+                upSweepOpt << <actualBlocks, blockSize >> > (nPadded, dev_in, offset);
                 checkCUDAError("upSweep launch");
             }
 
@@ -81,17 +151,17 @@ namespace StreamCompaction {
                 int offset = 1 << (i + 1);
                 int numNodes = nPadded / offset;
                 int actualBlocks = (numNodes + blockSize - 1) / blockSize;
-                downSweep << <actualBlocks, blockSize >> > (nPadded, dev_in, offset);
+                downSweepOpt << <actualBlocks, blockSize >> > (nPadded, dev_in, offset);
                 checkCUDAError("downSweep launch");
             }
-
+            cudaDeviceSynchronize();
             timer().endGpuTimer();
 
             cudaMemcpy(odata, dev_in, n * sizeof(int), cudaMemcpyDeviceToHost);
             checkCUDAError("Cuda memcpy device to host");
 
             cudaFree(dev_in);
-            checkCUDAError("Cuda free dev_in")
+            checkCUDAError("Cuda free dev_in");
         }
 
         /**
@@ -120,7 +190,7 @@ namespace StreamCompaction {
             cudaMalloc((void**)&dev_out, n * sizeof(int));
             checkCUDAError("Cuda malloc dev_out");
 
-            int blockSize = 128;
+            int blockSize = 256;
             int blocks = (n + blockSize - 1) / blockSize;
 
             cudaMemcpy(dev_in, idata, n * sizeof(int), cudaMemcpyHostToDevice);
@@ -145,7 +215,7 @@ namespace StreamCompaction {
                 int offset = 1 << (i + 1);
                 int numNodes = nPadded / offset;
                 int actualBlocks = (numNodes + blockSize - 1) / blockSize;
-                upSweep << <actualBlocks, blockSize >> > (nPadded, dev_scanned, offset);
+                upSweepOpt << <actualBlocks, blockSize >> > (nPadded, dev_scanned, offset);
                 checkCUDAError("upSweep launch");
             }
 
@@ -159,21 +229,23 @@ namespace StreamCompaction {
                 int offset = 1 << (i + 1);
                 int numNodes = nPadded / offset;
                 int actualBlocks = (numNodes + blockSize - 1) / blockSize;
-                downSweep << <actualBlocks, blockSize >> > (nPadded, dev_scanned, offset);
+                downSweepOpt << <actualBlocks, blockSize >> > (nPadded, dev_scanned, offset);
                 checkCUDAError("downSweep launch");
             }
 
-            // Grab number of elements to be placed in scatter
-            int scatterRemaining;
-            cudaMemcpy(&scatterRemaining, dev_scanned + (nPadded - 1), sizeof(int), cudaMemcpyDeviceToHost);
-        	checkCUDAError("Cuda memcpy scatterRemaining return device to host");
+            // Before scatter, get scan result + last boolean for return
+            int lastTwo[2];
+            cudaMemcpy(lastTwo, dev_scanned + (n - 1), sizeof(int), cudaMemcpyDeviceToHost);
+            checkCUDAError("Cuda memcpy exclusive scan result");
+        	cudaMemcpy(lastTwo + 1, dev_bools + (n - 1), sizeof(int), cudaMemcpyDeviceToHost);
+        	checkCUDAError("Cuda memcpy last boolean");
 
-            // Add extra 1 if last element is non-zero (we ran exclusive scan)
-            if (idata[n - 1] != 0) scatterRemaining++;
+            int scatterRemaining = lastTwo[0] + lastTwo[1];
 
             // Scatter step
             StreamCompaction::Common::kernScatter<<<blocks, blockSize>>>(n, dev_out, dev_in, dev_bools, dev_scanned);
-            timer().endGpuTimer();
+            cudaDeviceSynchronize();
+        	timer().endGpuTimer();
 
             // Bring results to host
             cudaMemcpy(odata, dev_out, n * sizeof(int), cudaMemcpyDeviceToHost);

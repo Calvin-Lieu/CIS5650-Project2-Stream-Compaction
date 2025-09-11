@@ -51,10 +51,12 @@ namespace StreamCompaction {
                 checkCUDAError("Scan step kernel");
                 std::swap(dev_in, dev_out);
             }
+            cudaDeviceSynchronize();
             timer().endGpuTimer();
 
             // Copy result back to CPU
-            cudaMemcpy(odata, dev_in, n * sizeof(int), cudaMemcpyDeviceToHost);
+            odata[0] = 0;
+            cudaMemcpy(odata + 1, dev_in, (n - 1)* sizeof(int), cudaMemcpyDeviceToHost);
             checkCUDAError("Cuda Memcpy to host");
 
             // Free global memory

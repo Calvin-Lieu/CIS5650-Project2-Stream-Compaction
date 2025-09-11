@@ -63,11 +63,26 @@ namespace StreamCompaction {
             timer().startCpuTimer();
             int *isZero = new int[n];
             int *scanArr = new int[n];
+
+            // Map to bool array
             for (int i = 0; i < n; i++)
             {
                 isZero[i] = (idata[i] != 0 ? 1 : 0);
             }
-            scan(n, scanArr, isZero);
+
+            // Scan step
+            scanArr[0] = isZero[0];
+            for (int i = 1; i < n; i++)
+            {
+                scanArr[i] = scanArr[i - 1] + isZero[i];
+            }
+            for (int i = n - 1; i > 0; i--)
+            {
+                scanArr[i] = scanArr[i - 1];
+            }
+            scanArr[0] = 0;
+
+            // Scatter step
             for (int i = 0; i < n; i++)
             {
 	            if (isZero[i] == 1)
